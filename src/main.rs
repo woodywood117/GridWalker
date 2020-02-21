@@ -6,7 +6,7 @@ extern crate piston;
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{GlGraphics, OpenGL};
 use piston::event_loop::{EventSettings, Events};
-use piston::input::{RenderEvent, UpdateArgs, UpdateEvent}; // RenderArgs,
+use piston::input::{RenderEvent, UpdateArgs, UpdateEvent, PressEvent, Button::Keyboard}; // RenderArgs,
 use piston::window::{WindowSettings};
 use rand;
 use graphics::*;
@@ -17,7 +17,7 @@ const MAX_X: u32 = 40;
 const MAX_Y: u32 = 40;
 
 #[derive(Clone)]
-struct Boxes {
+struct Walker {
     x: u32,
     y: u32,
     color: [f32; 4],
@@ -26,9 +26,9 @@ struct Boxes {
     last_box: u32,
 }
 
-impl Boxes {
-    fn new(max_x: u32, max_y: u32) -> Boxes {
-        Boxes{
+impl Walker {
+    fn new(max_x: u32, max_y: u32) -> Walker {
+        Walker {
             x: rand::random::<u32>() % max_x,
             y: rand::random::<u32>() % max_y,
             color: [rand::random::<f32>(), rand::random::<f32>(), rand::random::<f32>(), 1.0],
@@ -60,8 +60,8 @@ struct Grid {
     grid_count_horizontal: u32,
     grid_count_vertical: u32,
     //color: [f32; 4],
-    boxes: [Boxes; 5],
-    past_boxes: std::collections::HashMap<(u32, u32), Boxes>,
+    boxes: Vec<Walker>,
+    past_boxes: std::collections::HashMap<(u32, u32), Walker>,
 }
 
 impl Grid {
@@ -80,14 +80,16 @@ impl Grid {
     }
 }
 
-struct Walker {
+struct State {
     grid: Grid,
+    num_walkers: i32,
     dt_aggr: f64,
+    menu_open: bool,
 }
 
-impl Walker {
-    fn new() -> Walker {
-        let s = Walker {
+impl State {
+    fn new() -> State {
+        let s = State {
             grid: Grid{
                 pos_x: 0.0,
                 pos_y: 0.0,
@@ -97,22 +99,59 @@ impl Walker {
                 grid_count_horizontal: MAX_X,
                 grid_count_vertical: MAX_Y,
                 //color: [1.0, 1.0, 1.0, 0.2],
-                boxes: [
-                    Boxes::new(MAX_X, MAX_Y),
-                    Boxes::new(MAX_X, MAX_Y),
-                    Boxes::new(MAX_X, MAX_Y),
-                    Boxes::new(MAX_X, MAX_Y),
-                    Boxes::new(MAX_X, MAX_Y),
+                boxes: vec![
+                    Walker::new(MAX_X, MAX_Y),
+                    Walker::new(MAX_X, MAX_Y),
+                    Walker::new(MAX_X, MAX_Y),
+                    Walker::new(MAX_X, MAX_Y),
+                    Walker::new(MAX_X, MAX_Y),
                 ],
                 past_boxes: std::collections::HashMap::new(),
             },
+            num_walkers: 5,
             dt_aggr: 0.0,
+            menu_open: false,
         };
 
         s
     }
 
-    fn render(&mut self, c: Context, g: &mut GlGraphics) {
+    fn reset_grid(&mut self) {
+        self.grid = Grid{
+            pos_x: 0.0,
+            pos_y: 0.0,
+            line_width: 1.0,
+            grid_width: WINDOW_X,
+            grid_height: WINDOW_Y,
+            grid_count_horizontal: MAX_X,
+            grid_count_vertical: MAX_Y,
+            //color: [1.0, 1.0, 1.0, 0.2],
+            boxes: vec![],
+            past_boxes: std::collections::HashMap::new(),
+        };
+        for _ in 0..self.num_walkers {
+            self.grid.boxes.push(Walker::new(MAX_X, MAX_Y))
+        }
+    }
+
+    fn inc_grid_count(&mut self) {
+        self.num_walkers += 1;
+        self.grid.boxes.push(Walker::new(MAX_X, MAX_Y));
+    }
+
+    fn dec_grid_count(&mut self) {
+        if self.num_walkers > 0 {
+            self.num_walkers -= 1;
+            self.grid.boxes.pop();
+        }
+    }
+
+    fn render_menu(&mut self, _: Context, g: &mut GlGraphics) {
+        const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+        clear(BLACK, g);
+    }
+
+    fn render_grid(&mut self, c: Context, g: &mut GlGraphics) {
         const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
         const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
 
@@ -165,6 +204,10 @@ impl Walker {
             self.dt_aggr = 0.0;
         }
     }
+
+    fn toggle_menu(&mut self) {
+        self.menu_open = !self.menu_open;
+    }
 }
 
 fn main() {
@@ -174,25 +217,49 @@ fn main() {
     // Create an Glutin window.
     let mut window: Window = WindowSettings::new("GridWalker", [WINDOW_X, WINDOW_Y])
         .graphics_api(opengl)
+        .samples(2)
         .resizable(false)
         .exit_on_esc(true)
         .build()
         .unwrap();
 
     // Create a new game and run it.
-    let mut walker = Walker::new();
+    let mut walker = State::new();
     let gl = &mut GlGraphics::new(opengl);
 
     let mut events = Events::new(EventSettings::new());
     while let Some(e) = events.next(&mut window) {
         if let Some(args) = e.render_args() {
             gl.draw(args.viewport(), |c, gl| {
-                walker.render(c, gl);
+                if walker.menu_open {
+                    // walker.render_menu(c, gl);
+                    walker.render_grid(c, gl);
+                } else {
+                    walker.render_grid(c, gl);
+                }
             });
         }
 
         if let Some(args) = e.update_args() {
-            walker.update(&args);
+            if !walker.menu_open {
+                walker.update(&args);
+            }
+        }
+
+        if let Some(Keyboard(key)) = e.press_args() {
+            // println!("{:?}", key);
+            if key == piston::Key::E {
+                walker.toggle_menu();
+            }
+            if key == piston::Key::Return {
+                walker.reset_grid();
+            }
+            if key == piston::Key::NumPadPlus || key == piston::Key::Equals {
+                walker.inc_grid_count();
+            }
+            if key == piston::Key::NumPadMinus || key == piston::Key::Minus {
+                walker.dec_grid_count();
+            }
         }
     }
 }
