@@ -12,7 +12,7 @@ const WINDOW_X: f32 = 500.0;
 const WINDOW_Y: f32 = 500.0;
 const MAX_X: u32 = 40;
 const MAX_Y: u32 = 40;
-const UPDATES_PER_SECOND: f32 = 20.0;
+const UPDATES_PER_SECOND: f32 = 10.0;
 const MILLIS_PER_UPDATE: u64 = (1.0 / UPDATES_PER_SECOND * 1000.0) as u64;
 
 #[derive(Clone)]
@@ -239,10 +239,10 @@ pub fn main() -> GameResult {
             fullscreen_type: ggez::conf::FullscreenType::Windowed,
             borderless: false,
             min_width: WINDOW_X,
-            max_width: WINDOW_X,
             min_height: WINDOW_Y,
-            max_height: WINDOW_Y,
-            resizable: false,
+            max_width: 2000.0,
+            max_height: 2000.0,
+            resizable: true,
         });
     let (ctx, event_loop) = &mut cb.build()?;
     let state = &mut State::new();
