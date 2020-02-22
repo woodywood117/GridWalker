@@ -1,20 +1,19 @@
-extern crate glutin_window;
-extern crate graphics;
-extern crate opengl_graphics;
-extern crate piston;
+use ggez;
+use ggez::{Context, GameResult};
+use ggez::graphics;
+use ggez::event;
+use ggez::event::KeyMods;
+use ggez::input::keyboard::KeyCode;
 
-use glutin_window::GlutinWindow as Window;
-use opengl_graphics::{GlGraphics, OpenGL};
-use piston::event_loop::{EventSettings, Events};
-use piston::input::{RenderEvent, UpdateArgs, UpdateEvent, PressEvent, Button::Keyboard}; // RenderArgs,
-use piston::window::{WindowSettings};
 use rand;
-use graphics::*;
+use std::time::{Duration, Instant};
 
-const WINDOW_X: f64 = 639.0;
-const WINDOW_Y: f64 = 639.0;
+const WINDOW_X: f32 = 500.0;
+const WINDOW_Y: f32 = 500.0;
 const MAX_X: u32 = 40;
 const MAX_Y: u32 = 40;
+const UPDATES_PER_SECOND: f32 = 20.0;
+const MILLIS_PER_UPDATE: u64 = (1.0 / UPDATES_PER_SECOND * 1000.0) as u64;
 
 #[derive(Clone)]
 struct Walker {
@@ -52,24 +51,23 @@ impl Walker {
 }
 
 struct Grid {
-    pos_x: f64,
-    pos_y: f64,
-    line_width: f64,
-    grid_width: f64,
-    grid_height: f64,
+    pos_x: f32,
+    pos_y: f32,
+    line_width: f32,
+    grid_width: f32,
+    grid_height: f32,
     grid_count_horizontal: u32,
     grid_count_vertical: u32,
-    //color: [f32; 4],
     boxes: Vec<Walker>,
     past_boxes: std::collections::HashMap<(u32, u32), Walker>,
 }
 
 impl Grid {
-    fn box_width(&mut self) -> f64 {
-        (self.grid_width - (self.line_width * (self.grid_count_horizontal - 1) as f64)) / self.grid_count_horizontal as f64
+    fn box_width(&mut self) -> f32 {
+        (self.grid_width - (self.line_width * (self.grid_count_horizontal - 1) as f32)) / self.grid_count_horizontal as f32
     }
-    fn box_height(&mut self) -> f64 {
-        (self.grid_height - (self.line_width * (self.grid_count_vertical - 1) as f64)) / self.grid_count_vertical as f64
+    fn box_height(&mut self) -> f32 {
+        (self.grid_height - (self.line_width * (self.grid_count_vertical - 1) as f32)) / self.grid_count_vertical as f32
     }
     fn update(&mut self) {
         for i in 0..self.boxes.len() {
@@ -83,7 +81,7 @@ impl Grid {
 struct State {
     grid: Grid,
     num_walkers: i32,
-    dt_aggr: f64,
+    last_update: std::time::Instant,
     menu_open: bool,
 }
 
@@ -98,7 +96,6 @@ impl State {
                 grid_height: WINDOW_Y,
                 grid_count_horizontal: MAX_X,
                 grid_count_vertical: MAX_Y,
-                //color: [1.0, 1.0, 1.0, 0.2],
                 boxes: vec![
                     Walker::new(MAX_X, MAX_Y),
                     Walker::new(MAX_X, MAX_Y),
@@ -109,7 +106,7 @@ impl State {
                 past_boxes: std::collections::HashMap::new(),
             },
             num_walkers: 5,
-            dt_aggr: 0.0,
+            last_update: Instant::now(),
             menu_open: false,
         };
 
@@ -125,7 +122,6 @@ impl State {
             grid_height: WINDOW_Y,
             grid_count_horizontal: MAX_X,
             grid_count_vertical: MAX_Y,
-            //color: [1.0, 1.0, 1.0, 0.2],
             boxes: vec![],
             past_boxes: std::collections::HashMap::new(),
         };
@@ -146,120 +142,109 @@ impl State {
         }
     }
 
-    fn render_menu(&mut self, _: Context, g: &mut GlGraphics) {
-        const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
-        clear(BLACK, g);
-    }
-
-    fn render_grid(&mut self, c: Context, g: &mut GlGraphics) {
-        const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
-        const RED: [f32; 4] = [1.0, 0.0, 0.0, 1.0];
-
-        let bwidth = self.grid.box_width();
-        let bheight = self.grid.box_height();
-        let boxes = self.grid.boxes.clone();
-        let pos_x = self.grid.pos_x.clone();
-        let pos_y = self.grid.pos_y.clone();
-        let line_width = self.grid.line_width.clone();
-        let past_boxes = self.grid.past_boxes.values().clone();
-
-        // Clear the screen.
-        clear(BLACK, g);
-        let transform = c.transform;
-
-        for b in boxes.iter() {
-            let x_coord = if b.x == 0 {pos_x} else {pos_x + ((b.x as f64) * bwidth) + ((b.x) as f64) * line_width};
-            let y_coord = if b.y == 0 {pos_y} else {pos_y + b.y as f64 * bheight + (b.y) as f64 * line_width};
-
-            let rect = rectangle::rectangle_by_corners(
-                (x_coord - line_width) as f64,
-                (y_coord - line_width) as f64,
-                (x_coord + (bwidth + 2.0 * line_width)) as f64,
-                (y_coord + (bheight + 2.0 * line_width)) as f64);
-            rectangle(RED, rect, transform, g);
-            let rect = rectangle::rectangle_by_corners(
-                (x_coord) as f64,
-                (y_coord) as f64,
-                (x_coord + bwidth) as f64,
-                (y_coord + bheight) as f64);
-            rectangle(b.color, rect, transform, g);
-        }
-
-        for  b in past_boxes {
-            let x_coord = if b.x == 0 {pos_x} else {pos_x + ((b.x as f64) * bwidth) + ((b.x) as f64) * line_width};
-            let y_coord = if b.y == 0 {pos_y} else {pos_y + b.y as f64 * bheight + (b.y) as f64 * line_width};
-            let rect = rectangle::rectangle_by_corners(
-                (x_coord) as f64,
-                (y_coord) as f64,
-                (x_coord + bwidth) as f64,
-                (y_coord + bheight) as f64);
-            rectangle(b.color, rect, transform, g);
-        }
-    }
-
-    fn update(&mut self, args: &UpdateArgs) {
-        self.dt_aggr += args.dt;
-        if self.dt_aggr >= (1.0 / 10.0) {
-            self.grid.update();
-            self.dt_aggr = 0.0;
-        }
-    }
-
     fn toggle_menu(&mut self) {
         self.menu_open = !self.menu_open;
     }
 }
 
-fn main() {
-    // Change this to OpenGL::V2_1 if not working.
-    let opengl = OpenGL::V2_1;
-
-    // Create an Glutin window.
-    let mut window: Window = WindowSettings::new("GridWalker", [WINDOW_X, WINDOW_Y])
-        .graphics_api(opengl)
-        .samples(2)
-        .resizable(false)
-        .exit_on_esc(true)
-        .build()
-        .unwrap();
-
-    // Create a new game and run it.
-    let mut walker = State::new();
-    let gl = &mut GlGraphics::new(opengl);
-
-    let mut events = Events::new(EventSettings::new());
-    while let Some(e) = events.next(&mut window) {
-        if let Some(args) = e.render_args() {
-            gl.draw(args.viewport(), |c, gl| {
-                if walker.menu_open {
-                    // walker.render_menu(c, gl);
-                    walker.render_grid(c, gl);
-                } else {
-                    walker.render_grid(c, gl);
-                }
-            });
+impl event::EventHandler for State {
+    fn update(&mut self, _ctx: &mut Context) -> GameResult {
+        if Instant::now() - self.last_update >= Duration::from_millis(MILLIS_PER_UPDATE) && !self.menu_open{
+            self.grid.update();
+            self.last_update = Instant::now();
         }
 
-        if let Some(args) = e.update_args() {
-            if !walker.menu_open {
-                walker.update(&args);
-            }
+        Ok(())
+    }
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        graphics:: clear(ctx, graphics::BLACK);
+
+        let bwidth = self.grid.box_width();
+        let bheight = self.grid.box_height();
+
+        // draw boxes
+        for b in self.grid.boxes.iter_mut() {
+            let x_coord = if b.x == 0 {self.grid.pos_x} else {self.grid.pos_x + ((b.x as f32) * bwidth) + ((b.x) as f32) * self.grid.line_width};
+            let y_coord = if b.y == 0 {self.grid.pos_y} else {self.grid.pos_y + b.y as f32 * bheight + (b.y) as f32 * self.grid.line_width};
+            let rect = graphics::Mesh::new_rectangle(
+                ctx,
+                ggez::graphics::DrawMode::fill(),
+                ggez::graphics::Rect::new(
+                    x_coord - self.grid.line_width,
+                    y_coord - self.grid.line_width,
+                    bwidth + 2.0 * self.grid.line_width,
+                    bheight + 2.0 * self.grid.line_width,
+                ),
+                [1.0, 0.0, 0.0, 1.0].into(),
+            )?;
+            graphics::draw(ctx, &rect, graphics::DrawParam::default())?;
+            let rect = graphics::Mesh::new_rectangle(
+                ctx,
+                ggez::graphics::DrawMode::fill(),
+                ggez::graphics::Rect::new(x_coord, y_coord, bwidth, bheight),
+                b.color.into(),
+            )?;
+            graphics::draw(ctx, &rect, graphics::DrawParam::default())?;
         }
 
-        if let Some(Keyboard(key)) = e.press_args() {
-            // println!("{:?}", key);
-            if key == piston::Key::E {
-                walker.toggle_menu();
-            }
-            if key == piston::Key::Return {
-                walker.reset_grid();
-            }
-            if key == piston::Key::NumPadPlus || key == piston::Key::Equals {
-                walker.inc_grid_count();
-            }
-            if key == piston::Key::NumPadMinus || key == piston::Key::Minus {
-                walker.dec_grid_count();
-            }
+        for  b in self.grid.past_boxes.values() {
+            let x_coord = if b.x == 0 {self.grid.pos_x} else {self.grid.pos_x + ((b.x as f32) * bwidth) + ((b.x) as f32) * self.grid.line_width};
+            let y_coord = if b.y == 0 {self.grid.pos_y} else {self.grid.pos_y + b.y as f32 * bheight + (b.y) as f32 * self.grid.line_width};
+            let rect = graphics::Mesh::new_rectangle(
+                ctx,
+                ggez::graphics::DrawMode::fill(),
+                ggez::graphics::Rect::new(x_coord, y_coord, bwidth, bheight),
+                b.color.into(),
+            )?;
+            graphics::draw(ctx, &rect, graphics::DrawParam::default())?;
+        }
+
+        graphics::present(ctx)?;
+        Ok(())
+    }
+
+    fn key_down_event(&mut self, ctx: &mut Context, key: KeyCode, _keymods: KeyMods, _repeat: bool) {
+        if key == KeyCode::E {
+            self.toggle_menu();
+        }
+        if key == KeyCode::Return {
+            self.reset_grid();
+        }
+        if key == KeyCode::Add || key == KeyCode::Equals {
+            self.inc_grid_count();
+        }
+        if key == KeyCode::Subtract || key == KeyCode::Minus {
+            self.dec_grid_count();
+        }
+        if key == KeyCode::Escape {
+            event::quit(ctx);
         }
     }
+}
+
+pub fn main() -> GameResult {
+    let cb = ggez::ContextBuilder::new("GridWalker", "woodywood117")
+        .window_setup(
+            ggez::conf::WindowSetup {
+                title: "GridWalker".to_owned(),
+                samples: ggez::conf::NumSamples::Four,
+                vsync: true,
+                icon: "".to_owned(),
+                srgb: true,
+            })
+        .window_mode(ggez::conf::WindowMode {
+            width: WINDOW_X,
+            height: WINDOW_Y,
+            maximized: false,
+            fullscreen_type: ggez::conf::FullscreenType::Windowed,
+            borderless: false,
+            min_width: WINDOW_X,
+            max_width: WINDOW_X,
+            min_height: WINDOW_Y,
+            max_height: WINDOW_Y,
+            resizable: false,
+        });
+    let (ctx, event_loop) = &mut cb.build()?;
+    let state = &mut State::new();
+    event::run(ctx, event_loop, state)
 }
